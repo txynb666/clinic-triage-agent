@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>门诊预约与分诊协作系统 · 整体架构与部署拓扑</title>
+<style>
+  :root{--blue:#2563eb;--green:#059669;--orange:#d97706;--red:#dc2626;--gray:#64748b;--bg:#f8fafc;--line:#cbd5e1}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:var(--bg);padding:32px;color:#1e293b}
+  h1{font-size:22px;margin-bottom:4px}
+  .sub{color:var(--gray);font-size:13px;margin-bottom:24px}
+  h2{font-size:16px;margin:28px 0 12px;color:var(--blue);border-left:4px solid var(--blue);padding-left:10px}
+  .layer{background:#fff;border:1px solid var(--line);border-radius:10px;padding:14px 16px;margin-bottom:10px}
+  .layer-title{font-weight:700;font-size:14px;margin-bottom:8px;display:flex;align-items:center;gap:8px}
+  .tag{font-size:11px;color:#fff;padding:2px 8px;border-radius:10px}
+  .boxes{display:flex;flex-wrap:wrap;gap:8px}
+  .box{border:1px solid var(--line);border-radius:8px;padding:8px 12px;font-size:12.5px;background:var(--bg);line-height:1.5}
+  .box b{display:block;font-size:13px;margin-bottom:2px}
+  .arrow{text-align:center;color:var(--gray);font-size:13px;margin:2px 0}
+  .c1 .layer-title{color:var(--blue)}.c1 .tag{background:var(--blue)}
+  .c2 .layer-title{color:var(--green)}.c2 .tag{background:var(--green)}
+  .c3 .layer-title{color:var(--orange)}.c3 .tag{background:var(--orange)}
+  .c4 .layer-title{color:#7c3aed}.c4 .tag{background:#7c3aed}
+  .c5 .layer-title{color:var(--red)}.c5 .tag{background:var(--red)}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:10px;overflow:hidden;font-size:12.5px}
+  th,td{border:1px solid #e2e8f0;padding:8px 12px;text-align:left;vertical-align:top}
+  th{background:#eff6ff;color:var(--blue)}
+  .note{background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 14px;font-size:12.5px;margin-top:10px;line-height:1.7}
+</style>
+</head>
+<body>
+
+<h1>门诊预约与分诊协作系统 · 整体架构图 + 部署拓扑</h1>
+<div class="sub">约束：私有化单企业部署 · 单一医院 HIS 对接 · 万人级定时抢号 · 等保二级 · 独立 App + 企微通知 · HR/SSO/财务/OA 全集成</div>
+
+<h2>一、整体架构（五层视图）</h2>
+
+<div class="layer c1"><div class="layer-title">入口层 <span class="tag">客户端</span></div>
+  <div class="boxes">
+    <div class="box"><b>员工 App（iOS/Android）</b>建议 Flutter 跨端；预约、问答、报销上传；内嵌 H5 承载轻页面降低发版频率</div>
+    <div class="box"><b>管理后台 Web</b>知识库、号源、规则引擎、审批流、看板、审计</div>
+    <div class="box"><b>企业微信侧</b>通知触达主通道 + 可选企微 H5 入口</div>
+  </div>
+</div>
+<div class="arrow">▼ HTTPS / WSS</div>
+
+<div class="layer c1"><div class="layer-title">接入层 <span class="tag">统一网关</span></div>
+  <div class="boxes">
+    <div class="box"><b>Nginx / API 网关</b>路由、限流（放号专用规则）、TLS 终止</div>
+    <div class="box"><b>认证</b>SSO（OAuth2/OIDC）+ App Token + 企微回调验签</div>
+    <div class="box"><b>审计</b>全量请求日志、敏感接口独立审计流</div>
+  </div>
+</div>
+<div class="arrow">▼</div>
+
+<div class="layer c2"><div class="layer-title">业务服务层 <span class="tag">FastAPI 异步 · 模块化单体</span></div>
+  <div class="boxes">
+    <div class="box"><b>用户与组织</b>HR 花名册同步、权限、部门</div>
+    <div class="box"><b>预约服务</b>号源管理、预约状态机、取消/改期</div>
+    <div class="box"><b>抢号模块</b>放号定时任务 + Redis 分布式锁 + 请求排队 + 限流</div>
+    <div class="box"><b>分诊服务</b>症状-科室规则引擎 + 人工改派工作台</div>
+    <div class="box"><b>报销服务</b>规则引擎（比例/额度/票据）+ 发票管理（OCR 二期）</div>
+    <div class="box"><b>审批服务</b>工作流引擎（Flowable/内置状态机）+ OA 联动 + 请假联动</div>
+    <div class="box"><b>通知服务</b>企微模板消息 + App 推送 + 短信兜底</div>
+  </div>
+</div>
+<div class="arrow">▼</div>
+
+<div class="layer c3"><div class="layer-title">智能体编排层 <span class="tag">LLM + RAG</span></div>
+  <div class="boxes">
+    <div class="box"><b>意图路由 Agent</b>问答 / 预约 / 报销 / 投诉</div>
+    <div class="box"><b>分诊助手 Agent</b>对话收集症状 → 规则库推荐科室（输出仅供参考）</div>
+    <div class="box"><b>制度问答 Agent</b>就诊须知、报销制度 RAG 问答</div>
+    <div class="box"><b>LLM 抽象层</b>供应商可配置（私有化建议本地部署开源模型，敏感数据不出内网）</div>
+    <div class="box"><b>向量检索</b>制度/分诊知识库混合检索（BM25+向量）</div>
+  </div>
+</div>
+<div class="arrow">▼</div>
+
+<div class="layer c4"><div class="layer-title">数据层 <span class="tag">存储</span></div>
+  <div class="boxes">
+    <div class="box"><b>PostgreSQL 主从</b>业务数据；主库扛写入，从库承载查询/报表</div>
+    <div class="box"><b>Redis 哨兵</b>号源锁、排队队列、会话、限流计数</div>
+    <div class="box"><b>pgvector / Milvus</b>知识库向量</div>
+    <div class="box"><b>对象存储（MinIO）</b>发票影像、附件</div>
+  </div>
+</div>
+<div class="arrow">▼ 外部系统（全部经适配器隔离）</div>
+
+<div class="layer c5"><div class="layer-title">外部集成层 <span class="tag">适配器模式 · 各自独立部署/降级</span></div>
+  <div class="boxes">
+    <div class="box"><b>医院 HIS</b>号源同步 / 预约回写 ⚠️ 最大外部风险</div>
+    <div class="box"><b>HR 系统</b>花名册、组织架构（定时同步+变更事件）</div>
+    <div class="box"><b>SSO</b>统一认证（OAuth2/CAS）</div>
+    <div class="box"><b>财务系统</b>报销单、打款结果回传</div>
+    <div class="box"><b>OA / 考勤</b>审批流转、就诊请假联动</div>
+    <div class="box"><b>企业微信</b>消息推送、回调</div>
+  </div>
+</div>
+
+<h2>二、私有化部署拓扑（企业内网机房 / 企业云 VPC）</h2>
+
+<div class="layer"><div class="layer-title">🟦 DMZ 区（对外最小暴露）</div>
+  <div class="boxes">
+    <div class="box"><b>负载均衡 ×2（主备）</b>Nginx/Keepalived，唯一出入口</div>
+    <div class="box"><b>企微回调接收</b>仅开放企微 IP 白名单</div>
+  </div>
+</div>
+<div class="arrow">▼ 防火墙策略：仅 443 端口入站</div>
+
+<div class="layer"><div class="layer-title">🟩 应用区（内网）</div>
+  <div class="boxes">
+    <div class="box"><b>API 节点 ×3</b>FastAPI + Uvicorn，无状态可横向扩</div>
+    <div class="box"><b>抢号专用节点 ×1~2</b>独立部署放号定时任务与排队消费，与日常流量隔离</div>
+    <div class="box"><b>Agent/LLM 节点 ×2</b>编排服务 + 本地开源模型推理（如 Qwen 系列，vLLM）——私有化+等保下数据不出内网</div>
+    <div class="box"><b>管理后台 ×1</b></div>
+    <div class="box"><b>定时任务调度 ×1</b>放号、HR 同步、对账</div>
+  </div>
+</div>
+<div class="arrow">▼ 防火墙：按端口最小化开通</div>
+
+<div class="layer"><div class="layer-title">🟪 数据区（最高防护等级，仅应用区可访问）</div>
+  <div class="boxes">
+    <div class="box"><b>PostgreSQL 主 + 从</b>流复制，自动故障切换</div>
+    <div class="box"><b>Redis 哨兵 ×3</b></div>
+    <div class="box"><b>向量库</b>pgvector（随主库）或独立 Milvus</div>
+    <div class="box"><b>MinIO ×2</b>发票影像，加密存储</div>
+    <div class="box"><b>备份</b>每日全量 + 实时 WAL 归档，异地/离线备份介质</div>
+  </div>
+</div>
+
+<h2>三、万人抢号的专项设计</h2>
+<table>
+<tr><th>环节</th><th>措施</th></tr>
+<tr><td>放号前</td><td>号源预写入 Redis；静态资源提前预热；网关预扩容</td></tr>
+<tr><td>放号瞬间</td><td>请求进入 Redis 队列排队按序消费；号源扣减用 Lua 原子操作防超约；单用户限流（每秒 1 次）+ 全局限流</td></tr>
+<tr><td>放号后</td><td>异步落库（先 Redis 成功 → 队列异步写 PG）；HIS 回写走补偿任务，失败自动重试+告警</td></tr>
+</table>
+
+<div class="note">
+<b>等保二级要点映射</b>：身份鉴别（SSO+双因素可选）、访问控制（RBAC+网络分区）、安全审计（全量日志集中存储 ≥180 天）、数据完整性保密性（传输 TLS + 存储 AES 加密）、备份恢复（每日备份 + 恢复演练）。<br>
+<b>三条铁律</b>：① LLM 本地部署，健康数据与制度文档不出内网；② 所有外部系统经适配器隔离，任何一个挂掉系统主流程可降级运行；③ 号源写入只有 Redis 原子扣减一条路径，杜绝超约。
+</div>
+
+</body>
+</html>

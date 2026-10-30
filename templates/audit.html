@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+{% block title %}对话审计{% endblock %}
+{% block heading %}对话审计{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>🔎 筛选条件</h2>
+  <form method="get" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div><div class="muted" style="margin-bottom:6px">员工 ID</div>
+      <input type="text" name="user_id" value="{{ filters.user_id }}" placeholder="如 demo_user"></div>
+    <div><div class="muted" style="margin-bottom:6px">开始日期</div>
+      <input type="date" name="start" value="{{ filters.start }}"></div>
+    <div><div class="muted" style="margin-bottom:6px">结束日期</div>
+      <input type="date" name="end" value="{{ filters.end }}"></div>
+    <div><div class="muted" style="margin-bottom:6px">违规标记</div>
+      <select name="flagged">
+        <option value="" {% if not filters.flagged %}selected{% endif %}>全部</option>
+        <option value="1" {% if filters.flagged=='1' %}selected{% endif %}>仅看疑似违规</option>
+      </select></div>
+    <button class="btn">查询</button>
+    <a class="btn ghost" href="/admin/audit">重置</a>
+  </form>
+</div>
+
+<div class="card">
+  <h2>💬 对话列表 <span class="muted" style="font-weight:400">共 {{ total }} 条会话</span></h2>
+  <table>
+    <thead><tr><th>会话 ID</th><th>员工</th><th>首问</th><th>消息数</th><th>标记</th><th>最后活跃</th><th style="width:90px">操作</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td class="muted" style="font-family:monospace">{{ r.conv_id[:12] }}…</td>
+        <td>{{ r.user_id }}</td>
+        <td style="max-width:340px">{{ (r.first_q or '')[:60] }}{% if r.first_q and r.first_q|length > 60 %}…{% endif %}</td>
+        <td>{{ r.msg_count }}</td>
+        <td>{% if r.flag_count %}<span class="tag off">🚩 {{ r.flag_count }}</span>
+            {% else %}<span class="tag on">正常</span>{% endif %}</td>
+        <td class="muted">{{ r.last_at }}</td>
+        <td><button class="btn ghost" onclick="openConv('{{ r.conv_id }}')">详情</button></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="7" class="muted" style="text-align:center;padding:26px">没有符合条件的对话记录</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  {# 简易分页 #}
+  {% if total > 20 %}
+  <div style="display:flex;gap:8px;margin-top:14px;align-items:center" class="muted">
+    {% if page > 1 %}<a class="btn ghost" href="?page={{ page-1 }}&user_id={{ filters.user_id }}&start={{ filters.start }}&end={{ filters.end }}&flagged={{ filters.flagged }}">上一页</a>{% endif %}
+    第 {{ page }} / {{ ((total - 1) // 20) + 1 }} 页
+    {% if page * 20 < total %}<a class="btn ghost" href="?page={{ page+1 }}&user_id={{ filters.user_id }}&start={{ filters.start }}&end={{ filters.end }}&flagged={{ filters.flagged }}">下一页</a>{% endif %}
+  </div>
+  {% endif %}
+</div>
+
+{# 详情抽屉：展示问答全文、引用来源，并支持标记疑似违规 #}
+<div id="mask" style="display:none;position:fixed;inset:0;background:rgba(15,23,42,.35);z-index:50"
+     onclick="if(event.target===this)closeDrawer()">
+  <div style="position:absolute;right:0;top:0;bottom:0;width:640px;background:#fff;
+              display:flex;flex-direction:column">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--line);
+                display:flex;justify-content:space-between;align-items:center">
+      <b>对话详情</b>
+      <button class="btn ghost" onclick="closeDrawer()">关闭</button>
+    </div>
+    <div id="dbody" style="flex:1;overflow:auto;padding:18px 20px"></div>
+  </div>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+function closeDrawer(){ document.getElementById("mask").style.display = "none"; }
+
+/* 打开会话详情：拉取全部消息并渲染，assistant 消息可标记可疑 */
+async function openConv(convId){
+  const d = await api("/admin/api/audit/messages/" + convId);
+  const body = document.getElementById("dbody");
+  body.innerHTML = "";
+  d.data.forEach(m => {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "margin-bottom:14px;padding-bottom:12px;border-bottom:1px dashed var(--line)";
+    const head = document.createElement("div");
+    head.className = "muted";
+    head.style.marginBottom = "6px";
+    head.innerHTML = `${m.role === 'user' ? '👤 员工' : '🤖 助手'} · ${m.created_at}` +
+      (m.flagged ? ' <span class="tag off">🚩 疑似违规</span>' : '');
+    const text = document.createElement("div");
+    text.style.cssText = "font-size:13.5px;line-height:1.8;white-space:pre-wrap";
+    text.textContent = m.content;
+
+    wrap.appendChild(head); wrap.appendChild(text);
+
+    // 引用来源
+    if (m.sources && m.sources.length){
+      const s = document.createElement("div");
+      s.style.cssText = "margin-top:8px;font-size:12px;color:var(--gray)";
+      s.innerHTML = "📚 引用：" + m.sources.map(x => `《${x.doc}》`).join(" ");
+      wrap.appendChild(s);
+    }
+    // 助手的回答可标记为疑似违规（如代开药、伪造就诊记录等）
+    if (m.role === "assistant"){
+      const bar = document.createElement("div");
+      bar.style.cssText = "margin-top:8px;display:flex;gap:8px;align-items:center";
+      const btn = document.createElement("button");
+      btn.className = m.flagged ? "btn ghost" : "btn danger";
+      btn.textContent = m.flagged ? "取消标记" : "🚩 标记疑似违规";
+      btn.onclick = () => toggleFlag(m.id, !m.flagged, convId);
+      bar.appendChild(btn);
+      if (m.flagged && m.flag_reason){
+        const r = document.createElement("span");
+        r.className = "muted"; r.textContent = `原因：${m.flag_reason}（${m.flagged_by}）`;
+        bar.appendChild(r);
+      }
+      wrap.appendChild(bar);
+    }
+    body.appendChild(wrap);
+  });
+  document.getElementById("mask").style.display = "block";
+}
+
+/* 标记 / 取消标记：取消用 confirm，标记时可填原因 */
+async function toggleFlag(id, flagged, convId){
+  let reason = "";
+  if (flagged){
+    reason = prompt("请填写标记原因（如：疑似索要代开药、疑似伪造就诊记录）", "疑似违规报销相关问答");
+    if (reason === null) return;
+  }
+  await api("/admin/api/audit/flag", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({message_id:id, flagged:flagged, reason:reason||""})
+  });
+  toast(flagged ? "已标记为疑似违规" : "已取消标记");
+  openConv(convId);   // 刷新详情，保持抽屉打开
+}
+</script>
+{% endblock %}

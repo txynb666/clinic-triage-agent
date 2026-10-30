@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}管理后台{% endblock %} · 门诊分诊系统</title>
+<style>
+  :root{--blue:#2563eb;--gray:#64748b;--bg:#f1f5f9;--line:#e2e8f0;--red:#dc2626;--green:#059669}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:var(--bg);color:#1e293b;display:flex;min-height:100vh}
+  /* 侧边栏 */
+  aside{width:216px;background:#0f172a;color:#cbd5e1;padding:18px 12px;flex-shrink:0}
+  aside .brand{display:flex;align-items:center;gap:9px;padding:0 8px 18px;color:#fff;font-weight:700}
+  aside .brand i{width:28px;height:28px;border-radius:7px;background:var(--blue);
+     display:flex;align-items:center;justify-content:center;font-style:normal;font-size:15px}
+  aside a{display:flex;align-items:center;gap:9px;padding:10px 12px;border-radius:8px;
+     color:#cbd5e1;text-decoration:none;font-size:13.5px;margin-bottom:2px}
+  aside a:hover{background:#1e293b;color:#fff}
+  aside a.on{background:var(--blue);color:#fff}
+  /* 主区 */
+  main{flex:1;display:flex;flex-direction:column;min-width:0}
+  header{height:56px;background:#fff;border-bottom:1px solid var(--line);
+     display:flex;align-items:center;justify-content:space-between;padding:0 24px}
+  header h1{font-size:16px}
+  header .u{font-size:13px;color:var(--gray);display:flex;align-items:center;gap:12px}
+  header .u b{color:#1e293b}
+  header .u button{border:1px solid var(--line);background:#fff;border-radius:7px;
+     padding:5px 11px;font-size:12.5px;cursor:pointer;color:var(--gray)}
+  .content{padding:22px 24px;flex:1;overflow:auto}
+  /* 卡片与通用组件 */
+  .card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+  .card h2{font-size:14.5px;margin-bottom:14px;display:flex;align-items:center;gap:8px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;color:var(--gray);font-weight:500;font-size:12px;
+     padding:9px 10px;border-bottom:1px solid var(--line);background:#f8fafc}
+  td{padding:10px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+  .btn{background:var(--blue);color:#fff;border:none;border-radius:8px;
+     padding:8px 16px;font-size:13px;cursor:pointer}
+  .btn.ghost{background:#fff;border:1px solid var(--line);color:#475569}
+  .btn.danger{background:#fff;border:1px solid #fecaca;color:var(--red)}
+  .btn:disabled{opacity:.55;cursor:not-allowed}
+  input[type=text],input[type=date],input[type=password],select,textarea{
+     border:1px solid var(--line);border-radius:8px;padding:8px 11px;font-size:13px;
+     outline:none;font-family:inherit}
+  input:focus,textarea:focus,select:focus{border-color:var(--blue)}
+  .tag{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11.5px}
+  .tag.on{background:#ecfdf5;color:var(--green)} .tag.off{background:#fef2f2;color:var(--red)}
+  .tag.info{background:#eff6ff;color:var(--blue)}
+  .muted{color:var(--gray);font-size:12.5px}
+  #toast{position:fixed;top:18px;right:18px;z-index:99;display:flex;flex-direction:column;gap:8px}
+  .toast{padding:10px 16px;border-radius:9px;font-size:13px;box-shadow:0 6px 18px rgba(0,0,0,.12);
+     background:#fff;border-left:4px solid var(--green);animation:in .2s}
+  .toast.bad{border-left-color:var(--red)}
+  @keyframes in{from{transform:translateX(30px);opacity:0}}
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand"><i>🏥</i>门诊分诊后台</div>
+  <a href="/admin" class="{{ 'on' if active=='dashboard' }}">📊 概览看板</a>
+  <a href="/admin/kb" class="{{ 'on' if active=='kb' }}">📚 制度知识库</a>
+  <a href="/admin/prompts" class="{{ 'on' if active=='prompts' }}">✏️ 提示词模板</a>
+  <a href="/admin/audit" class="{{ 'on' if active=='audit' }}">🔍 对话审计</a>
+  <a href="/" target="_blank" style="margin-top:14px;color:#64748b">↗ 员工端问答</a>
+</aside>
+<main>
+  <header>
+    <h1>{% block heading %}{% endblock %}</h1>
+    <div class="u">👤 <b>{{ user.name }}</b> · {{ '管理员' if user.role=='admin' else '员工' }}
+      <button onclick="logout()">退出登录</button></div>
+  </header>
+  <div class="content">{% block content %}{% endblock %}</div>
+</main>
+<div id="toast"></div>
+<script>
+/* 全局提示条 */
+function toast(msg, bad){
+  const d=document.createElement("div");
+  d.className="toast"+(bad?" bad":""); d.textContent=msg;
+  document.getElementById("toast").appendChild(d);
+  setTimeout(()=>d.remove(), 3200);
+}
+/* 统一请求封装：自动处理错误码，非 0 一律展示中文 message */
+async function api(url, opt={}){
+  const r = await fetch(url, opt).catch(()=>({json:async()=>({code:9999,message:"网络异常"})}));
+  const d = await r.json().catch(()=>({code:9999,message:"响应解析失败"}));
+  if(d.code!==0){ toast(d.message||"操作失败", true); throw d; }
+  return d;
+}
+async function logout(){
+  await api("/admin/api/logout",{method:"POST"});
+  location.href="/admin/login";
+}
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>

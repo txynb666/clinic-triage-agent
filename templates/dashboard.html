@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}概览看板{% endblock %}
+{% block heading %}概览看板{% endblock %}
+{% block content %}
+
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:18px">
+  {% set cards = [
+    ('累计会话', stats.conversations, '💬', '#2563eb'),
+    ('消息总数', stats.messages, '📨', '#059669'),
+    ('知识库文档', stats.documents, '📚', '#d97706'),
+    ('疑似违规标记', stats.flagged, '🚩', '#dc2626')
+  ] %}
+  {% for name, val, icon, color in cards %}
+  <div class="card" style="margin:0">
+    <div class="muted" style="display:flex;justify-content:space-between;align-items:center">
+      <span>{{ name }}</span><span style="font-size:17px">{{ icon }}</span></div>
+    <div style="font-size:28px;font-weight:700;margin-top:8px;color:{{ color }}">{{ val }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="card">
+  <h2>⚡ 快捷操作</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap">
+    <a class="btn" href="/admin/kb">上传制度文档</a>
+    <a class="btn ghost" href="/admin/prompts">编辑系统提示词</a>
+    <a class="btn ghost" href="/admin/audit">查看对话审计</a>
+    <a class="btn ghost" href="/" target="_blank">打开员工端</a>
+  </div>
+</div>
+
+<div class="card">
+  <h2>📋 系统状态</h2>
+  <table>
+    <tr><th style="width:180px">检查项</th><th>状态</th></tr>
+    <tr><td>提示词生效方式</td><td>实时读库，修改后立即对问答生效（无需重启）</td></tr>
+    <tr><td>检索策略</td><td>BM25 + 向量混合检索，Top 3 片段拼入上下文</td></tr>
+    <tr><td>会话上下文</td><td>每次请求携带最近 6 轮历史</td></tr>
+    <tr><td>鉴权方式</td><td>JWT（HS256，2 小时过期），HttpOnly Cookie 存储</td></tr>
+  </table>
+</div>
+{% endblock %}

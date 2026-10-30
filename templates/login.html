@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>登录 · 门诊分诊后台</title>
+<style>
+  :root{--blue:#2563eb;--line:#e2e8f0;--gray:#64748b}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;
+       background:linear-gradient(135deg,#eff6ff,#f1f5f9 60%,#ecfdf5)}
+  .box{width:380px;background:#fff;border-radius:16px;padding:34px 32px;
+       box-shadow:0 12px 40px rgba(15,23,42,.09)}
+  .box .logo{width:44px;height:44px;border-radius:11px;background:var(--blue);color:#fff;
+       display:flex;align-items:center;justify-content:center;font-size:21px;margin-bottom:16px}
+  h1{font-size:19px;margin-bottom:6px}
+  .sub{color:var(--gray);font-size:12.5px;margin-bottom:22px}
+  label{display:block;font-size:12.5px;color:#475569;margin:14px 0 6px}
+  input{width:100%;border:1px solid var(--line);border-radius:9px;padding:11px 13px;
+        font-size:14px;outline:none}
+  input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #dbeafe}
+  button{width:100%;margin-top:22px;background:var(--blue);color:#fff;border:none;
+        border-radius:9px;padding:12px;font-size:14.5px;cursor:pointer}
+  button:disabled{background:#94a3b8}
+  .err{display:none;margin-top:14px;padding:9px 12px;border-radius:8px;
+       background:#fef2f2;color:#dc2626;font-size:12.5px;border:1px solid #fecaca}
+  .hint{margin-top:18px;font-size:11.5px;color:var(--gray);line-height:1.7;
+       background:#f8fafc;border-radius:8px;padding:10px 12px}
+</style>
+</head>
+<body>
+<form class="box" onsubmit="login(event)">
+  <div class="logo">🏥</div>
+  <h1>门诊预约与分诊协作</h1>
+  <div class="sub">管理后台登录</div>
+
+  <label>账号</label>
+  <input id="u" placeholder="请输入账号" autocomplete="username" required>
+  <label>密码</label>
+  <input id="p" type="password" placeholder="请输入密码" autocomplete="current-password" required>
+
+  <button id="btn">登录</button>
+  <div class="err" id="err"></div>
+
+  <div class="hint">演示账号：admin / admin123（管理员）<br>employee / emp123（员工，用于验证权限拦截）</div>
+</form>
+
+<script>
+async function login(e){
+  e.preventDefault();
+  const btn=document.getElementById("btn"), errEl=document.getElementById("err");
+  errEl.style.display="none"; btn.disabled=true; btn.textContent="登录中…";
+  const r = await fetch("/admin/api/login",{
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({username:document.getElementById("u").value,
+                          password:document.getElementById("p").value})
+  }).catch(()=>null);
+  const d = r ? await r.json().catch(()=>({code:9999,message:"响应解析失败"})) : {code:9999,message:"网络异常"};
+  btn.disabled=false; btn.textContent="登录";
+  if(d.code!==0){ errEl.textContent="⚠️ "+(d.message||"登录失败"); errEl.style.display="block"; return; }
+  // 员工账号登录成功也拒绝进入后台（接口级权限的双重保险）
+  if(d.data.role!=="admin"){
+    await fetch("/admin/api/logout",{method:"POST"});
+    errEl.textContent="⚠️ 无权限访问该功能（当前角色：员工）"; errEl.style.display="block"; return;
+  }
+  location.href="/admin";
+}
+</script>
+</body>
+</html>

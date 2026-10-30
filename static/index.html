@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>门诊预约与分诊助手</title>
+<style>
+  :root{--blue:#2563eb;--gray:#64748b;--bg:#f1f5f9;--bubble-user:#2563eb;--line:#e2e8f0}
+  *{box-sizing:border-box;margin:0;padding:0;font-family:"PingFang SC","Microsoft YaHei",sans-serif}
+  body{background:var(--bg);height:100vh;display:flex;flex-direction:column}
+  header{background:#fff;border-bottom:1px solid var(--line);padding:14px 20px;
+         display:flex;align-items:center;gap:10px}
+  header .logo{width:34px;height:34px;border-radius:8px;background:var(--blue);
+         color:#fff;display:flex;align-items:center;justify-content:center;font-size:18px}
+  header b{font-size:16px} header span{color:var(--gray);font-size:12px}
+  #chat{flex:1;overflow-y:auto;padding:20px 16%;display:flex;flex-direction:column;gap:14px}
+  .row{display:flex} .row.user{justify-content:flex-end}
+  .bubble{max-width:72%;padding:12px 16px;border-radius:14px;font-size:14.5px;
+          line-height:1.7;white-space:pre-wrap;word-break:break-word}
+  .user .bubble{background:var(--bubble-user);color:#fff;border-bottom-right-radius:4px}
+  .bot  .bubble{background:#fff;border:1px solid var(--line);border-bottom-left-radius:4px}
+  .src-card{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+  .src-card .t{font-size:12px;color:var(--gray);margin-bottom:4px}
+  .src-item{font-size:12px;color:#475569;background:var(--bg);border-radius:6px;
+            padding:6px 8px;margin-bottom:4px}
+  .src-item b{color:var(--blue);font-weight:600}
+  /* 工具调用轨迹 */
+  .tools{margin-top:10px;border-top:1px dashed var(--line);padding-top:8px}
+  .tools .t{font-size:12px;color:var(--gray);margin-bottom:5px}
+  .tool-chip{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;
+             background:#eff6ff;color:#1d4ed8;border-radius:12px;
+             padding:3px 9px;margin:0 5px 5px 0}
+  .tool-chip.bad{background:#fef2f2;color:#dc2626}
+  /* 草稿确认卡片 */
+  .confirm-card{margin-top:10px;border:1px solid #bfdbfe;background:#f8fbff;
+                border-radius:10px;padding:12px 14px}
+  .confirm-card .h{font-size:13.5px;font-weight:600;color:#1d4ed8;margin-bottom:10px}
+  .confirm-card table{width:100%;font-size:12.5px}
+  .confirm-card td{padding:4px 0;border:none}
+  .confirm-card td:first-child{color:var(--gray);width:90px}
+  .confirm-card td:last-child{color:#1e293b;font-weight:500}
+  .confirm-card .n{font-size:11.5px;color:var(--gray);margin-top:9px;line-height:1.6}
+  .confirm-card .btns{display:flex;gap:9px;margin-top:11px}
+  .confirm-card button{border-radius:8px;padding:7px 15px;font-size:12.5px;cursor:pointer}
+  .confirm-card .yes{background:var(--blue);color:#fff;border:none}
+  .confirm-card .no{background:#fff;border:1px solid var(--line);color:#475569}
+  .confirm-card button:disabled{opacity:.55;cursor:not-allowed}
+  .confirm-card.done{background:#f8fafc;border-color:var(--line)}
+  #status{padding:0 16%;font-size:12.5px;color:var(--orange);height:22px;line-height:22px}
+  #status::after{content:"…";animation:dots 1s infinite}
+  @keyframes dots{50%{content:"……"}}
+  #err{display:none;margin:0 16% 6px;padding:8px 12px;border-radius:8px;
+       background:#fef2f2;border:1px solid #fecaca;color:var(--red,#dc2626);font-size:13px}
+  footer{background:#fff;border-top:1px solid var(--line);padding:12px 16%;display:flex;gap:10px}
+  #input{flex:1;border:1px solid var(--line);border-radius:10px;padding:11px 14px;
+         font-size:14px;outline:none;resize:none;height:44px}
+  #input:focus{border-color:var(--blue)}
+  #send{background:var(--blue);color:#fff;border:none;border-radius:10px;
+        padding:0 22px;font-size:14px;cursor:pointer}
+  #send:disabled{background:#94a3b8;cursor:not-allowed}
+  .cursor{display:inline-block;width:2px;height:16px;background:var(--blue);
+          animation:blink .8s infinite;vertical-align:middle}
+  @keyframes blink{50%{opacity:0}}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🏥</div>
+  <div><b>门诊预约与分诊助手</b><br><span>制度问答 · 分诊推荐仅供参考，以分诊台医生判断为准</span></div>
+</header>
+
+<div id="chat"></div>
+<div id="status"></div>
+<div id="err"></div>
+
+<footer>
+  <textarea id="input" placeholder="请输入问题，例如：门诊报销比例是多少？" rows="1"></textarea>
+  <button id="send">发送</button>
+</footer>
+
+<script>
+/* ================= 状态管理 ================= */
+let sessionId = localStorage.getItem("clinic_session") || "";  // 会话续接
+let busy = false;      // 是否正在生成（期间禁用输入）
+let typingQueue = [];  // 打字机待渲染队列
+let typingTimer = null;
+let currentBubble = null, currentText = "", cursorEl = null;
+
+const chatEl = document.getElementById("chat");
+const statusEl = document.getElementById("status");
+const errEl = document.getElementById("err");
+const inputEl = document.getElementById("input");
+const sendEl = document.getElementById("send");
+
+/* ================= 工具函数 ================= */
+function scrollBottom(){ chatEl.scrollTop = chatEl.scrollHeight; }
+
+/* 追加一条消息气泡，返回气泡内容元素 */
+function addMsg(role){
+  const row = document.createElement("div");
+  row.className = "row " + (role === "user" ? "user" : "bot");
+  const b = document.createElement("div");
+  b.className = "bubble";
+  row.appendChild(b);
+  chatEl.appendChild(row);
+  scrollBottom();
+  return b;
+}
+
+/* 打字机效果：delta 先入队，定时器每 30ms 弹出 2 字符渲染 */
+function enqueueTyping(text){
+  typingQueue.push(text);
+  if (typingTimer) return;
+  typingTimer = setInterval(() => {
+    if (!typingQueue.length){ clearInterval(typingTimer); typingTimer = null; return; }
+    let take = 2;                              // 每帧最多渲染 2 个字符，营造打字节奏
+    while (take > 0 && typingQueue.length){
+      const piece = typingQueue[0].slice(0, take);
+      typingQueue[0] = typingQueue[0].slice(take);
+      if (!typingQueue[0]) typingQueue.shift();
+      currentText += piece;
+      take -= piece.length;
+    }
+    currentBubble.textContent = currentText;
+    currentBubble.appendChild(cursorEl);
+    scrollBottom();
+  }, 30);
+}
+
+/* 渲染引用来源卡片 */
+function renderSources(bubble, sources){
+  const card = document.createElement("div");
+  card.className = "src-card";
+  card.innerHTML = '<div class="t">📚 引用制度来源</div>';
+  sources.forEach(s => {
+    const d = document.createElement("div");
+    d.className = "src-item";
+    const b = document.createElement("b"); b.textContent = "《" + s.doc + "》 ";
+    d.appendChild(b);
+    d.appendChild(document.createTextNode(s.snippet));
+    card.appendChild(d);
+  });
+  bubble.appendChild(card);
+  scrollBottom();
+}
+
+/* 渲染工具调用轨迹（让"会自己调工具"这件事对用户可见） */
+const TOOL_LABEL = {
+  search_policy:"检索制度", list_available_slots:"查询号源",
+  check_slot_availability:"确认号源", check_reimbursement_eligibility:"校验报销资格",
+  create_appointment:"创建预约", create_reimbursement_draft:"生成报销草稿",
+  get_my_appointments:"查我的预约", get_my_reimbursements:"查我的报销"
+};
+function renderTools(bubble, log){
+  if (!log || !log.length) return;
+  const box = document.createElement("div");
+  box.className = "tools";
+  box.innerHTML = '<div class="t">🛠 执行过程</div>';
+  log.forEach(x => {
+    const chip = document.createElement("span");
+    chip.className = "tool-chip" + (x.ok ? "" : " bad");
+    chip.textContent = (x.ok ? "✓ " : "✗ ") + (TOOL_LABEL[x.name] || x.name);
+    if (!x.ok && x.message) chip.title = x.message;
+    box.appendChild(chip);
+  });
+  bubble.appendChild(box);
+}
+
+function showError(msg){
+  errEl.textContent = "⚠️ " + msg;
+  errEl.style.display = "block";
+  setTimeout(() => errEl.style.display = "none", 6000);
+}
+
+/* ================= 草稿确认卡片（中断点 UI） =================
+   后端在 create_reimbursement_draft 前强制中断，推 confirm 事件；
+   用户点「确认」→ POST /chat/confirm(action=confirm) 继续执行；
+   点「取消」→ action=reject，草稿不落库。 */
+function renderConfirm(bubble, payload){
+  const box = document.createElement("div");
+  box.className = "confirm-card";
+  const p = payload.preview || {};
+  box.innerHTML = `<div class="h">📝 ${p.title || "待确认操作"}</div>`;
+
+  const tb = document.createElement("table");
+  (p.fields || []).forEach(f => {
+    const tr = document.createElement("tr");
+    const td1 = document.createElement("td"); td1.textContent = f.label;
+    const td2 = document.createElement("td"); td2.textContent = f.value;
+    tr.appendChild(td1); tr.appendChild(td2); tb.appendChild(tr);
+  });
+  box.appendChild(tb);
+
+  const note = document.createElement("div");
+  note.className = "n"; note.textContent = p.notice || "";
+  box.appendChild(note);
+
+  const btns = document.createElement("div");
+  btns.className = "btns";
+  const yes = document.createElement("button");
+  yes.className = "yes"; yes.textContent = "确认生成草稿";
+  const no = document.createElement("button");
+  no.className = "no"; no.textContent = "取消";
+  btns.appendChild(yes); btns.appendChild(no);
+  box.appendChild(btns);
+  bubble.appendChild(box);
+  scrollBottom();
+
+  // 确认：恢复执行，把后续结果流式渲染到同一条消息里
+  yes.onclick = async () => {
+    yes.disabled = no.disabled = true;
+    box.classList.add("done");
+    yes.textContent = "处理中…";
+    await runConfirm(payload.token, "confirm", box);
+  };
+  // 取消：告知后端丢弃挂起动作
+  no.onclick = async () => {
+    yes.disabled = no.disabled = true;
+    box.classList.add("done");
+    await fetch("/chat/confirm", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({token: payload.token, action:"reject"})
+    }).catch(()=>{});
+    box.querySelector(".h").textContent = "❌ 已取消，未生成报销草稿";
+    box.querySelector(".btns").remove();
+  };
+}
+
+/* 调用 /chat/confirm 并解析 SSE 流（与 /chat 同一套解析逻辑） */
+async function runConfirm(token, action, cardBox){
+  setBusy(true);
+  // 新建一个气泡承接确认后的输出
+  const b = addMsg("bot");
+  currentBubble = b; currentText = "";
+  cursorEl = document.createElement("span"); cursorEl.className = "cursor";
+  b.appendChild(cursorEl);
+
+  const reader = (await fetch("/chat/confirm", {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({token, action})
+  }).catch(()=>null))?.body?.getReader();
+  if (!reader){ setBusy(false); return; }
+
+  const dec = new TextDecoder();
+  let buf = "", toolLog = [];
+  while (true){
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, {stream:true});
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0){
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      let ev = "message", data = "";
+      block.split("\n").forEach(l => {
+        if (l.startsWith("event:")) ev = l.slice(6).trim();
+        if (l.startsWith("data:")) data += l.slice(5).trim();
+      });
+      if (!data) continue;
+      const pl = JSON.parse(data);
+      if (ev === "status"){ statusEl.textContent = pl.text; }
+      else if (ev === "tool"){ toolLog.push({name:pl.name, ok:pl.result && pl.result.ok, message:pl.result && pl.result.message}); }
+      else if (ev === "delta"){ enqueueTyping(pl.content); }
+      else if (ev === "error"){ showError(pl.message); }
+      else if (ev === "done"){
+        clearInterval(typingTimer); typingTimer = null; typingQueue = [];
+        b.textContent = currentText || "（无输出）";
+        renderTools(b, toolLog);
+        if (cardBox) cardBox.querySelector(".h").textContent = "✅ 已确认并生成草稿";
+        if (cardBox && cardBox.querySelector(".btns")) cardBox.querySelector(".btns").remove();
+      }
+    }
+  }
+  setBusy(false);
+}
+
+function setBusy(v){
+  busy = v;
+  sendEl.disabled = v;
+  inputEl.disabled = v;
+  if (!v) statusEl.textContent = "";
+}
+
+/* ================= 核心：解析 SSE 流（fetch + ReadableStream） =================
+   EventSource 只支持 GET，这里用 fetch POST 并手动解析 text/event-stream 格式 */
+async function ask(question){
+  setBusy(true);
+  errEl.style.display = "none";
+  currentBubble = addMsg("bot");
+  currentText = "";
+  cursorEl = document.createElement("span"); cursorEl.className = "cursor";
+  currentBubble.appendChild(cursorEl);
+
+  const reader = (await fetch("/chat", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({session_id: sessionId || null, question})
+  }).catch(e => { showError("网络异常，请稍后重试"); setBusy(false); return null; }))?.body?.getReader();
+  if (!reader) return;
+
+  const decoder = new TextDecoder();
+  let buf = "", sources = [], toolLog = [];
+
+  while (true){
+    const {done, value} = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, {stream: true});
+    /* SSE 事件以空行分隔，逐条解析 event: / data: */
+    let idx;
+    while ((idx = buf.indexOf("\n\n")) >= 0){
+      const block = buf.slice(0, idx); buf = buf.slice(idx + 2);
+      let event = "message", data = "";
+      block.split("\n").forEach(line => {
+        if (line.startsWith("event:")) event = line.slice(6).trim();
+        if (line.startsWith("data:"))  data += line.slice(5).trim();
+      });
+      if (!data) continue;
+      const payload = JSON.parse(data);
+
+      switch (event){
+        case "meta":                      // 首个事件：保存会话 ID
+          sessionId = payload.session_id;
+          localStorage.setItem("clinic_session", sessionId);
+          break;
+        case "status":                    // 检索状态提示
+          statusEl.textContent = payload.text;
+          break;
+        case "sources":                   // 记录引用，回答结束后渲染
+          sources = payload.sources;
+          break;
+        case "tool":                      // 工具调用轨迹：先记下，结束后统一渲染
+          toolLog.push({name: payload.name, ok: payload.result && payload.result.ok !== false,
+                        message: (payload.result && payload.result.message) || ""});
+          break;
+        case "confirm":                   // 中断点：渲染草稿确认卡片，等待用户决定
+          renderTools(currentBubble, toolLog);
+          renderConfirm(currentBubble, payload);
+          setBusy(false);
+          break;
+        case "delta":                     // LLM 增量文本 → 打字机队列
+          enqueueTyping(payload.content);
+          break;
+        case "done":                      // 结束：去光标、渲染引用、解锁
+          clearInterval(typingTimer); typingTimer = null; typingQueue = [];
+          currentBubble.textContent = currentText || "（本次未生成回答，请重试）";
+          renderTools(currentBubble, toolLog);
+          if (sources.length) renderSources(currentBubble, sources);
+          setBusy(false);
+          break;
+        case "error":                     // 错误：红色提示，解锁重试
+          clearInterval(typingTimer); typingTimer = null; typingQueue = [];
+          currentBubble.textContent = currentText || "（未获得回答）";
+          renderTools(currentBubble, toolLog);
+          if (sources.length) renderSources(currentBubble, sources);
+          showError(payload.message);
+          setBusy(false);
+          break;
+      }
+    }
+  }
+  setBusy(false);   // 兜底解锁
+}
+
+/* ================= 发送 ================= */
+function send(){
+  const q = inputEl.value.trim();
+  if (!q || busy) return;
+  addMsg("user").textContent = q;       // 用户气泡直接显示
+  inputEl.value = "";
+  ask(q);
+}
+sendEl.onclick = send;
+inputEl.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey){ e.preventDefault(); send(); }
+});
+
+/* ================= 刷新后恢复历史会话 ================= */
+(async function restore(){
+  if (!sessionId) return;
+  const r = await fetch("/sessions/" + sessionId + "/messages").catch(() => null);
+  if (!r || !r.ok){ localStorage.removeItem("clinic_session"); sessionId = ""; return; }
+  const res = await r.json();
+  if (res.code !== 0){ localStorage.removeItem("clinic_session"); sessionId = ""; return; }
+  res.data.forEach(m => {
+    const b = addMsg(m.role);
+    b.textContent = m.content;
+    if (m.sources) renderSources(b, m.sources);
+  });
+  if (!res.data.length) localStorage.removeItem("clinic_session");
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}制度知识库{% endblock %}
+{% block heading %}制度知识库管理{% endblock %}
+{% block content %}
+
+<div class="card">
+  <h2>⬆️ 上传制度文档</h2>
+  <form id="up" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">
+    <div><div class="muted" style="margin-bottom:6px">文件（.md / .pdf）</div>
+      <input type="file" id="file" accept=".md,.markdown,.pdf" required
+             style="border:1px dashed var(--line);border-radius:8px;padding:7px;font-size:13px"></div>
+    <div><div class="muted" style="margin-bottom:6px">文档标题（可选）</div>
+      <input type="text" id="title" placeholder="留空则用文件名"></div>
+    <div><div class="muted" style="margin-bottom:6px">分类</div>
+      <select id="cat">
+        <option>就诊须知</option><option>分诊规则</option>
+        <option>报销制度</option><option>预约规则</option>
+      </select></div>
+    <button class="btn" id="upbtn">上传并建索引</button>
+  </form>
+  <div class="muted" style="margin-top:10px">
+    流程：解析文本 → 500 字切片（重叠 50）→ 向量化 → 重建 FAISS 索引。上传成功后问答立即可以命中新内容。
+  </div>
+</div>
+
+<div class="card">
+  <h2>📚 文档列表 <span class="muted" style="font-weight:400">（{{ docs|length }} 篇启用中）</span></h2>
+  <table>
+    <thead><tr><th>#</th><th>标题</th><th>文件名</th><th>分类</th><th>切片数</th><th>上传人</th><th>更新时间</th><th style="width:80px">操作</th></tr></thead>
+    <tbody id="tb">
+    {% for d in docs %}
+      <tr data-id="{{ d.id }}">
+        <td class="muted">{{ d.id }}</td>
+        <td><b>{{ d.title }}</b></td>
+        <td class="muted">{{ d.filename }}</td>
+        <td><span class="tag info">{{ d.category }}</span></td>
+        <td>{{ d.chunk_count }}</td>
+        <td class="muted">{{ d.uploaded_by or '-' }}</td>
+        <td class="muted">{{ d.updated_at }}</td>
+        <td><button class="btn danger" onclick="del({{ d.id }}, '{{ d.title }}')">删除</button></td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" class="muted" style="text-align:center;padding:26px">暂无文档，请先上传</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% endblock %}
+{% block script %}
+<script>
+/* 上传：FormData 提交，成功后刷新页面以更新列表 */
+document.getElementById("up").onsubmit = async e => {
+  e.preventDefault();
+  const f = document.getElementById("file").files[0];
+  if (!f) return;
+  const btn = document.getElementById("upbtn");
+  btn.disabled = true; btn.textContent = "处理中…";
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("title", document.getElementById("title").value);
+  fd.append("category", document.getElementById("cat").value);
+  try{
+    const d = await api("/admin/api/kb/upload", {method:"POST", body:fd});
+    toast(`上传成功：${d.data.chunk_count} 个切片，索引共 ${d.data.index_total} 片`);
+    setTimeout(()=>location.reload(), 900);
+  }catch(_){ btn.disabled=false; btn.textContent="上传并建索引"; }
+};
+
+/* 删除：二次确认后调用 DELETE，并重建索引 */
+async function del(id, title){
+  if(!confirm(`确认删除《${title}》？删除后问答将不再引用该文档，索引会自动重建。`)) return;
+  await api("/admin/api/kb/documents/"+id, {method:"DELETE"});
+  toast("已删除并更新索引");
+  setTimeout(()=>location.reload(), 700);
+}
+</script>
+{% endblock %}
