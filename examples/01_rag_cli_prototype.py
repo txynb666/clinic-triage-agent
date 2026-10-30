@@ -14,10 +14,13 @@ OpenAI 协议的服务均可）。示例：
     export LLM_MODEL=deepseek-chat
     export EMBED_BASE_URL=...                          # Embedding 服务地址（缺省同 LLM）
 
-运行：
-    python clinic_qa_proto.py                     # 首次自动构建索引
-    python clinic_qa_proto.py --rebuild           # 强制重建索引
-    python clinic_qa_proto.py --doc 就诊须知.md   # 指定文档路径
+运行（在项目根目录执行）：
+    python examples/01_rag_cli_prototype.py                # 首次自动构建索引
+    python examples/01_rag_cli_prototype.py --rebuild      # 强制重建索引
+    python examples/01_rag_cli_prototype.py --doc data/kb_files/就诊须知.md
+
+说明：本文件是阶段 1 的最小原型，独立于 app/ 包，用于理解 RAG 链路。
+      正式功能请使用 `make dev` 启动完整服务。
 
 依赖安装：
     pip install faiss-cpu jieba rank-bm25 openai numpy
@@ -43,8 +46,8 @@ CHUNK_SIZE = 500          # 每片约 500 字（按需求约束）
 CHUNK_OVERLAP = 50        # 相邻切片重叠 50 字，防止关键句被切断
 TOP_K = 3                 # 混合检索后取 top3
 VECTOR_WEIGHT = 0.6       # 混合得分权重：向量 0.6 + BM25 0.4（可调）
-INDEX_DIR = "clinic_index"  # FAISS 索引与切片缓存目录
-DOC_PATH = "就诊须知.md"    # 默认制度文档路径
+INDEX_DIR = "data/index"    # FAISS 索引与切片缓存目录
+DOC_PATH = "data/kb_files/就诊须知.md"    # 默认制度文档路径
 
 
 def get_llm_client() -> OpenAI:
